@@ -1,0 +1,15 @@
+services:
+  hand_ai_api:
+    build: .
+    container_name: hand_ai_api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - ALLOWED_API_KEYS=${ALLOWED_API_KEYS:-}
+      - ENVIRONMENT=production
+      - HOST=0.0.0.0
+      - PORT=8000
+    env_file:
+      - .env
