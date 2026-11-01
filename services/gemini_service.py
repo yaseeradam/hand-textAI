@@ -26,10 +26,12 @@ class GeminiService:
         Returns: (extracted_markdown_text, confidence_score, model_name).
         """
         api_key = settings.GEMINI_API_KEY.strip()
-        if not api_key:
+        groq_key = settings.GROQ_API_KEY.strip()
+
+        if not api_key and not groq_key:
             raise ValueError(
-                "GEMINI_API_KEY is not configured on the server. "
-                "Please set GEMINI_API_KEY in hand_ai_api/.env or system environment."
+                "Neither GEMINI_API_KEY nor GROQ_API_KEY is configured on the server. "
+                "Please configure at least one API key in hand_ai_api/.env."
             )
 
         prompt = custom_prompt or SYSTEM_PROMPT
@@ -63,48 +65,49 @@ class GeminiService:
         last_error = ""
 
         async with httpx.AsyncClient(timeout=60.0) as client:
-            for model in models_to_try:
-                endpoint = (
-                    f"https://generativelanguage.googleapis.com/v1beta/models/"
-                    f"{model}:generateContent?key={api_key}"
-                )
-
-                try:
-                    response = await client.post(
-                        endpoint,
-                        headers={"Content-Type": "application/json"},
-                        json=payload,
+            if api_key:
+                for model in models_to_try:
+                    endpoint = (
+                        f"https://generativelanguage.googleapis.com/v1beta/models/"
+                        f"{model}:generateContent?key={api_key}"
                     )
 
-                    if response.status_code == 200:
-                        data = response.json()
-                        candidates = data.get("candidates", [])
-                        if candidates:
-                            content = candidates[0].get("content", {})
-                            parts = content.get("parts", [])
-                            if parts:
-                                raw_text = parts[0].get("text", "")
-                                return raw_text.strip(), 98.0, model
+                    try:
+                        response = await client.post(
+                            endpoint,
+                            headers={"Content-Type": "application/json"},
+                            json=payload,
+                        )
 
-                    error_body = response.text
-                    logger.warning(
-                        f"Gemini API model {model} returned status {response.status_code}: {error_body}"
-                    )
+                        if response.status_code == 200:
+                            data = response.json()
+                            candidates = data.get("candidates", [])
+                            if candidates:
+                                content = candidates[0].get("content", {})
+                                parts = content.get("parts", [])
+                                if parts:
+                                    raw_text = parts[0].get("text", "")
+                                    return raw_text.strip(), 98.0, model
 
-                    if response.status_code == 400 and "API_KEY_INVALID" in error_body:
-                        raise ValueError("The server's Google Gemini API Key is invalid.")
-                    elif response.status_code == 429:
-                        last_error = "Gemini API rate limit or quota exceeded."
+                        error_body = response.text
+                        logger.warning(
+                            f"Gemini API model {model} returned status {response.status_code}: {error_body}"
+                        )
+
+                        if response.status_code == 400 and "API_KEY_INVALID" in error_body:
+                            raise ValueError("The server's Google Gemini API Key is invalid.")
+                        elif response.status_code == 429:
+                            last_error = "Gemini API rate limit or quota exceeded."
+                            continue
+                        elif response.status_code == 403:
+                            raise PermissionError("Access forbidden by Gemini API. Check API key permissions.")
+
+                        last_error = f"{model} returned HTTP {response.status_code}"
+
+                    except (httpx.ConnectError, httpx.TimeoutException) as exc:
+                        logger.error(f"Network error connecting to Gemini ({model}): {exc}")
+                        last_error = f"Network timeout contacting model {model}"
                         continue
-                    elif response.status_code == 403:
-                        raise PermissionError("Access forbidden by Gemini API. Check API key permissions.")
-
-                    last_error = f"{model} returned HTTP {response.status_code}"
-
-                except (httpx.ConnectError, httpx.TimeoutException) as exc:
-                    logger.error(f"Network error connecting to Gemini ({model}): {exc}")
-                    last_error = f"Network timeout contacting model {model}"
-                    continue
 
             # ---------------------------------------------------------
             # Automatic Cross-Provider Fallback: Groq Vision (Qwen/Llama)
