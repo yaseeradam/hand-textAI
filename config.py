@@ -7,8 +7,9 @@ load_dotenv()
 
 class Settings:
     def __init__(self):
-        # 1. Developer secret Google Gemini API key
+        # 1. Developer secret API keys
         self.GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+        self.GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
 
         # 2. Client Access Control (Keys you give to others or your own apps)
         self._raw_client_keys: str = os.getenv("ALLOWED_API_KEYS", "*")
@@ -19,6 +20,7 @@ class Settings:
         # 3. Models
         self.DEFAULT_MODEL: str = os.getenv("DEFAULT_MODEL", "gemini-flash-lite-latest")
         self.FALLBACK_MODELS: List[str] = ["gemini-flash-latest", "gemini-2.5-flash"]
+        self.GROQ_MODEL: str = os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
 
         # 4. Server settings
         self.HOST: str = os.getenv("HOST", "0.0.0.0")

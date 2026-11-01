@@ -106,4 +106,58 @@ class GeminiService:
                     last_error = f"Network timeout contacting model {model}"
                     continue
 
-        raise RuntimeError(f"All Gemini Vision models failed. Last error: {last_error}")
+            # ---------------------------------------------------------
+            # Automatic Cross-Provider Fallback: Groq Vision (Qwen/Llama)
+            # ---------------------------------------------------------
+            groq_key = settings.GROQ_API_KEY.strip()
+            if groq_key:
+                logger.info("Attempting OCR fallback via Groq Vision API...")
+                groq_model = settings.GROQ_MODEL
+                groq_payload = {
+                    "model": groq_model,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": prompt},
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f"data:image/jpeg;base64,{clean_base64_jpeg}"
+                                    },
+                                },
+                            ],
+                        }
+                    ],
+                    "temperature": 0.1,
+                    "max_tokens": 4096,
+                }
+
+                try:
+                    groq_res = await client.post(
+                        "https://api.groq.com/openai/v1/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {groq_key}",
+                            "Content-Type": "application/json",
+                        },
+                        json=groq_payload,
+                        timeout=30.0,
+                    )
+
+                    if groq_res.status_code == 200:
+                        groq_data = groq_res.json()
+                        choices = groq_data.get("choices", [])
+                        if choices:
+                            message = choices[0].get("message", {})
+                            content = message.get("content", "")
+                            if content:
+                                logger.info(f"Successfully processed OCR using Groq ({groq_model})")
+                                return content.strip(), 96.0, f"groq/{groq_model}"
+                    else:
+                        logger.warning(
+                            f"Groq API returned HTTP {groq_res.status_code}: {groq_res.text[:200]}"
+                        )
+                except Exception as groq_exc:
+                    logger.warning(f"Error during Groq fallback: {groq_exc}")
+
+        raise RuntimeError(f"All Vision models failed. Last error: {last_error}")
